@@ -1,0 +1,17 @@
+{
+  "name": "reGpio",
+  "version": "1.0.0",
+  "description": "Level switching tracking on GPIO interrupt with debounce",
+  "keywords": "gpio, interrupt, debounce",
+  "authors":
+  [
+    {
+      "name": "Alexander Razzhivin",
+      "email": "kotyara12@yandex.ru",
+      "url": "https://kotyara12.ru"
+    }
+  ],
+  "license": "MIT",
+  "frameworks": ["arduino", "espidf"],
+  "platforms": ["espressif32"]
+}
