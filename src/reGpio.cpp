@@ -56,7 +56,7 @@ bool reGPIO::initGPIO()
   // Set GPIO mode
   if (!_interrupt_set) {
     // rlog_d(logTAG, "Init GPIO %d...", _gpio_num);
-    gpio_pad_select_gpio(_gpio_num);
+    gpio_reset_pin(_gpio_num);
     RE_OK_CHECK(gpio_set_direction(_gpio_num, GPIO_MODE_INPUT), return false);
     if (_internal_pull) {
       if (_active_level) {
