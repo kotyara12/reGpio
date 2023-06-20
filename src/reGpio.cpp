@@ -18,7 +18,7 @@ static void debounceTimeout(void* arg)
   gpio->onDebounce();
 }
 
-reGPIO::reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, uint32_t debounce_time, cb_gpio_change_t callback)
+reGPIO::reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, bool interrupt_enabled, uint32_t debounce_time, cb_gpio_change_t callback)
 {
   _gpio_num = (gpio_num_t)gpio_num;
   _active_level = active_level;
@@ -26,15 +26,18 @@ reGPIO::reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, uint3
   _debounce_time = debounce_time;
   _callback = callback;
   _timer = nullptr;
+  _interrupt_enabled = interrupt_enabled;
   _interrupt_set = false;
   _state = 0xFF;
 }
 
 reGPIO::~reGPIO()
 {
-  gpio_intr_disable(_gpio_num);
-  gpio_isr_handler_remove(_gpio_num);
-  _interrupt_set = false;
+  if (_interrupt_enabled || _interrupt_set) {
+    gpio_intr_disable(_gpio_num);
+    gpio_isr_handler_remove(_gpio_num);
+    _interrupt_set = false;
+  };
 
   if (_timer) {
     if (esp_timer_is_active(_timer)) {
@@ -52,22 +55,10 @@ void reGPIO::setCallback(cb_gpio_change_t callback)
 
 bool reGPIO::initGPIO()
 {
-  esp_err_t err;
   // Set GPIO mode
-  if (!_interrupt_set) {
-    // rlog_d(logTAG, "Init GPIO %d...", _gpio_num);
-    gpio_reset_pin(_gpio_num);
-    RE_OK_CHECK(gpio_set_direction(_gpio_num, GPIO_MODE_INPUT), return false);
-    if (_internal_pull) {
-      if (_active_level) {
-        RE_OK_CHECK(gpio_set_pull_mode(_gpio_num, GPIO_PULLDOWN_ONLY), return false);
-      } else {
-        RE_OK_CHECK(gpio_set_pull_mode(_gpio_num, GPIO_PULLUP_ONLY), return false);
-      };
-    } else {
-      RE_OK_CHECK(gpio_set_pull_mode(_gpio_num, GPIO_FLOATING), return false);
-    };
-  };
+  gpio_reset_pin(_gpio_num);
+  RE_OK_CHECK(gpio_set_direction(_gpio_num, GPIO_MODE_INPUT), return false);
+  setInternalPull(_internal_pull);
 
   // Create debounce timer
   if ((_debounce_time > 0) && !(_timer)) {
@@ -82,18 +73,56 @@ bool reGPIO::initGPIO()
   };
 
   // Install interrupt
-  if (!_interrupt_set) {
+  if (_interrupt_enabled && !_interrupt_set) {
     // rlog_d(logTAG, "Init GPIO %d interrupt...", _gpio_num);
     RE_OK_CHECK(gpio_set_intr_type(_gpio_num, GPIO_INTR_ANYEDGE), return false);
     RE_OK_CHECK(gpio_isr_handler_add(_gpio_num, gpioIsrHandler, this), return false);
     RE_OK_CHECK(gpio_intr_enable(_gpio_num), return false);
-    _interrupt_set = true;
   };
   
   rlog_i(logTAG, "GPIO %d initialized", _gpio_num);
 
   // Read current state
   return readGPIO(false);
+}
+
+bool reGPIO::setInternalPull(bool enabled)
+{
+  if (enabled) {
+    if (_active_level) {
+      RE_OK_CHECK(gpio_set_pull_mode(_gpio_num, GPIO_PULLDOWN_ONLY), return false);
+    } else {
+      RE_OK_CHECK(gpio_set_pull_mode(_gpio_num, GPIO_PULLUP_ONLY), return false);
+    };
+  } else {
+    RE_OK_CHECK(gpio_set_pull_mode(_gpio_num, GPIO_FLOATING), return false);
+  };
+  return true;
+}
+
+bool reGPIO::activate(bool activate_pull)
+{
+  if (activate_pull) {
+    setInternalPull(_internal_pull);
+  };
+  if (_interrupt_enabled && !_interrupt_set) {
+    RE_OK_CHECK(gpio_intr_enable(_gpio_num), return false);
+    _interrupt_set = true;
+    return readGPIO(false);
+  };
+  return true;
+}
+
+bool reGPIO::deactivate(bool deactivate_pull)
+{
+  if (deactivate_pull) {
+    setInternalPull(false);
+  };
+  if (_interrupt_enabled && _interrupt_set) {
+    RE_OK_CHECK(gpio_intr_disable(_gpio_num), return false);
+    _interrupt_set = false;
+  };
+  return true;
 }
 
 bool reGPIO::readGPIO(bool isr)
@@ -156,6 +185,11 @@ bool reGPIO::readGPIO(bool isr)
   return newState;
 }
 
+bool reGPIO::read()
+{
+  return readGPIO(false);
+}
+
 uint8_t reGPIO::getState()
 {
   return _state;
@@ -168,7 +202,7 @@ void reGPIO::onInterrupt()
       esp_timer_stop(_timer);
     };
     if (esp_timer_start_once(_timer, _debounce_time) == ESP_OK) {
-      if (gpio_intr_disable(_gpio_num) == ESP_OK) {
+      if (_interrupt_enabled && (gpio_intr_disable(_gpio_num) == ESP_OK)) {
         _interrupt_set = false;
       };
     } else { 
@@ -192,5 +226,7 @@ void reGPIO::onDebounce()
   };
 
   // Enable interrupts
-  _interrupt_set = gpio_intr_enable(_gpio_num) == ESP_OK;
+  if (_interrupt_enabled) {
+    _interrupt_set = gpio_intr_enable(_gpio_num) == ESP_OK;
+  };
 }

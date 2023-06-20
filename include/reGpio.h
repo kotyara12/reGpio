@@ -25,11 +25,15 @@ extern "C" {
 
 class reGPIO {
 public:
-  reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, uint32_t debounce_time, cb_gpio_change_t callback);
+  reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, bool interrupt_enabled, uint32_t debounce_time, cb_gpio_change_t callback);
   ~reGPIO();
 
   void setCallback(cb_gpio_change_t callback);
   bool initGPIO();
+  bool setInternalPull(bool enabled);
+  bool activate(bool activate_pull);
+  bool deactivate(bool deactivate_pull);
+  bool read();
   uint8_t getState();
   
   void onInterrupt();
@@ -39,6 +43,7 @@ private:
   uint8_t _active_level = 1;
   uint8_t _state = 0xFF;
   bool _internal_pull = false;
+  bool _interrupt_enabled = true;
   bool _interrupt_set = false;
   uint32_t _debounce_time = 0;
   uint64_t _timestamp = 0;
