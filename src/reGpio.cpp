@@ -24,6 +24,9 @@ reGPIO::reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, bool 
   _active_level = active_level;
   _internal_pull = internal_pull;
   _debounce_time = debounce_time;
+  _event_group = nullptr;
+  _bits_press = 0x00;
+  _bits_long_press = 0x00;
   _callback = callback;
   _timer = nullptr;
   _interrupt_enabled = interrupt_enabled;
@@ -46,6 +49,13 @@ reGPIO::~reGPIO()
     esp_timer_delete(_timer);
     _timer = nullptr;
   };
+}
+
+void reGPIO::setEventGroup(EventGroupHandle_t event_group, const uint32_t bits_press, const uint32_t bits_long_press)
+{
+  _event_group = event_group;
+  _bits_press = bits_press;
+  _bits_long_press = bits_long_press;
 }
 
 void reGPIO::setCallback(cb_gpio_change_t callback)
@@ -147,14 +157,28 @@ bool reGPIO::readGPIO(bool isr)
 
     // Send basic event
     if (isr) {
-      BaseType_t xHigherPriorityTaskWoken, xResult;
-      xResult = eventLoopPostFromISR(RE_GPIO_EVENTS, RE_GPIO_CHANGE, &evt_data, sizeof(evt_data), &xHigherPriorityTaskWoken);
-      // If button was released, send additional event
-      if ((_state == 1) && (newState == 0)) {
-        if (duration < CONFIG_BUTTON_LONG_PRESS_MS) {
-          xResult = eventLoopPostFromISR(RE_GPIO_EVENTS, RE_GPIO_BUTTON, &evt_data, sizeof(evt_data), &xHigherPriorityTaskWoken);
-        } else {
-          xResult = eventLoopPostFromISR(RE_GPIO_EVENTS, RE_GPIO_LONG_BUTTON, &evt_data, sizeof(evt_data), &xHigherPriorityTaskWoken);
+      BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+      BaseType_t xResult = pdFAIL;
+      // Select dispatch method 
+      if (_event_group) {
+        // Through an event group
+        if ((_state == 1) && (newState == 0)) {
+          if (duration < CONFIG_BUTTON_LONG_PRESS_MS) {
+            xResult = xEventGroupSetBitsFromISR(_event_group, _bits_press, &xHigherPriorityTaskWoken);
+          } else {
+            xResult = xEventGroupSetBitsFromISR(_event_group, _bits_long_press, &xHigherPriorityTaskWoken);
+          };
+        };
+      } else {
+        // Through an event loop
+        xResult = eventLoopPostFromISR(RE_GPIO_EVENTS, RE_GPIO_CHANGE, &evt_data, sizeof(evt_data), &xHigherPriorityTaskWoken);
+        // If button was released, send additional event
+        if ((_state == 1) && (newState == 0)) {
+          if (duration < CONFIG_BUTTON_LONG_PRESS_MS) {
+            xResult = eventLoopPostFromISR(RE_GPIO_EVENTS, RE_GPIO_BUTTON, &evt_data, sizeof(evt_data), &xHigherPriorityTaskWoken);
+          } else {
+            xResult = eventLoopPostFromISR(RE_GPIO_EVENTS, RE_GPIO_LONG_BUTTON, &evt_data, sizeof(evt_data), &xHigherPriorityTaskWoken);
+          };
         };
       };
       // Callback
@@ -166,13 +190,26 @@ bool reGPIO::readGPIO(bool isr)
         portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
       };
     } else {
-      eventLoopPost(RE_GPIO_EVENTS, RE_GPIO_CHANGE, &evt_data, sizeof(evt_data), portMAX_DELAY);
-      // If button was released, send additional event
-      if ((_state == 1) && (newState == 0)) {
-        if (duration < CONFIG_BUTTON_LONG_PRESS_MS) {
-          eventLoopPost(RE_GPIO_EVENTS, RE_GPIO_BUTTON, &evt_data, sizeof(evt_data), portMAX_DELAY);
-        } else {
-          eventLoopPost(RE_GPIO_EVENTS, RE_GPIO_LONG_BUTTON, &evt_data, sizeof(evt_data), portMAX_DELAY);
+      // Select dispatch method 
+      if (_event_group) {
+        // Through an event group
+        if ((_state == 1) && (newState == 0)) {
+          if (duration < CONFIG_BUTTON_LONG_PRESS_MS) {
+            xEventGroupSetBits(_event_group, _bits_press);
+          } else {
+            xEventGroupSetBits(_event_group, _bits_long_press);
+          };
+        };
+      } else {
+        // Through an event loop
+        eventLoopPost(RE_GPIO_EVENTS, RE_GPIO_CHANGE, &evt_data, sizeof(evt_data), portMAX_DELAY);
+        // If button was released, send additional event
+        if ((_state == 1) && (newState == 0)) {
+          if (duration < CONFIG_BUTTON_LONG_PRESS_MS) {
+            eventLoopPost(RE_GPIO_EVENTS, RE_GPIO_BUTTON, &evt_data, sizeof(evt_data), portMAX_DELAY);
+          } else {
+            eventLoopPost(RE_GPIO_EVENTS, RE_GPIO_LONG_BUTTON, &evt_data, sizeof(evt_data), portMAX_DELAY);
+          };
         };
       };
       // Callback

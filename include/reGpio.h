@@ -2,7 +2,7 @@
    RU: Level switching tracking on GPIO interrupt with debounce
    EN: Отслеживание переключения уровней на GPIO через прерывание с подавлением дребезга контактов
    --------------------------------------------------------------------------------
-   (с) 2022 Разживин Александр | Razzhivin Alexander
+   (с) 2022-2024 Разживин Александр | Razzhivin Alexander
    kotyara12@yandex.ru | https://kotyara12.ru | tg: @kotyara1971
 */
 
@@ -11,6 +11,8 @@
 
 #include <stdint.h>
 #include <esp_err.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "esp_timer.h"
 #include "driver/gpio.h"
 #include "rTypes.h"
@@ -28,6 +30,7 @@ public:
   reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, bool interrupt_enabled, uint32_t debounce_time, cb_gpio_change_t callback);
   ~reGPIO();
 
+  void setEventGroup(EventGroupHandle_t event_group, const uint32_t bits_press, const uint32_t bits_long_press);
   void setCallback(cb_gpio_change_t callback);
   bool initGPIO();
   bool setInternalPull(bool enabled);
@@ -47,6 +50,9 @@ private:
   bool _interrupt_set = false;
   uint32_t _debounce_time = 0;
   uint64_t _timestamp = 0;
+  EventGroupHandle_t _event_group = nullptr;
+  uint32_t _bits_press = 0x00; 
+  uint32_t _bits_long_press = 0x00;
   cb_gpio_change_t _callback = nullptr;
   esp_timer_handle_t _timer = nullptr;
 
