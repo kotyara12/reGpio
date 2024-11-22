@@ -18,7 +18,7 @@
 #include "rTypes.h"
 
 #define CONFIG_BUTTON_DEBOUNCE_TIME_US 50000
-#define CONFIG_PIR_DEBOUNCE_TIME_US    1000000
+#define CONFIG_PIR_DEBOUNCE_TIME_US    100000
 #define CONFIG_BUTTON_LONG_PRESS_MS    1000
 
 #ifdef __cplusplus
@@ -30,9 +30,9 @@ public:
   reGPIO(uint8_t gpio_num, uint8_t active_level, bool internal_pull, bool interrupt_enabled, uint32_t debounce_time, cb_gpio_change_t callback);
   ~reGPIO();
 
-  void setEventGroup(EventGroupHandle_t event_group, const uint32_t bits_press, const uint32_t bits_long_press);
+  void setEventGroup(EventGroupHandle_t event_group, const uint32_t bits_on, const uint32_t bits_off, const uint32_t bits_press, const uint32_t bits_long_press);
   void setCallback(cb_gpio_change_t callback);
-  bool initGPIO();
+  int8_t initGPIO();
   bool setInternalPull(bool enabled);
   bool activate(bool activate_pull);
   bool deactivate(bool deactivate_pull);
@@ -53,6 +53,8 @@ private:
   EventGroupHandle_t _event_group = nullptr;
   uint32_t _bits_press = 0x00; 
   uint32_t _bits_long_press = 0x00;
+  uint32_t _bits_on = 0x00;
+  uint32_t _bits_off = 0x00;
   cb_gpio_change_t _callback = nullptr;
   esp_timer_handle_t _timer = nullptr;
 
